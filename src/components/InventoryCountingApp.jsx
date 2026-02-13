@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Download, LogOut, Trash2, Camera, X } from 'lucide-react';
+import { Plus, Download, LogOut, Trash2, Camera, X, Link } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import {
   iniciarSessao,
-  buscarProdutos,
   adicionarQuantidade,
   corrigirQuantidade,
   removerItemContado,
   obterItensContados,
   gerarRelatorio,
-  finalizarSessao
+  finalizarSessao,
+  supabase
 } from '../services/supabase_integration';
 
 const InventoryCountingApp = () => {
@@ -36,6 +36,9 @@ const InventoryCountingApp = () => {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [scannerMessage, setScannerMessage] = useState('');
+  const [pendingBarcode, setPendingBarcode] = useState(null);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [linkSearchTerm, setLinkSearchTerm] = useState('');
 
   const searchInputRef = useRef(null);
   const quantityInputRef = useRef(null);
@@ -59,21 +62,27 @@ const InventoryCountingApp = () => {
 
   // Carregar produtos do Supabase ao iniciar
   useEffect(() => {
-    const carregarProdutos = async () => {
-      const resultado = await buscarProdutos('', 500);
-      if (resultado.sucesso) {
-        setProducts(resultado.dados.map(p => ({
-          id: p.id,
-          code: p.codigo,
-          description: p.descricao,
-          category: p.categoria,
-          unit: p.unidade_padrao,
-          barcode: p.codigo
-        })));
-      }
-    };
     carregarProdutos();
   }, []);
+
+  const carregarProdutos = async () => {
+    const { data, error } = await supabase
+      .from('produtos')
+      .select('id, codigo, descricao, categoria, unidade_padrao, codigo_barras')
+      .eq('ativo', true)
+      .order('codigo');
+
+    if (!error && data) {
+      setProducts(data.map(p => ({
+        id: p.id,
+        code: p.codigo,
+        description: p.descricao,
+        category: p.categoria,
+        unit: p.unidade_padrao,
+        barcode: p.codigo_barras || ''
+      })));
+    }
+  };
 
   // Carregar itens contados quando sessão estiver ativa
   useEffect(() => {
@@ -143,6 +152,7 @@ const InventoryCountingApp = () => {
   // Abrir scanner de código de barras
   const openScanner = () => {
     setScannerMessage('');
+    setPendingBarcode(null);
     setShowScanner(true);
     setTimeout(() => {
       const html5Qrcode = new Html5Qrcode('barcode-reader');
@@ -162,7 +172,8 @@ const InventoryCountingApp = () => {
               setSearchTerm('');
               setTimeout(() => quantityInputRef.current?.focus(), 100);
             } else {
-              setScannerMessage(`Código "${decodedText}" não encontrado no cadastro.`);
+              setPendingBarcode(decodedText);
+              setScannerMessage(`Código "${decodedText}" não vinculado a nenhum produto.`);
             }
           }).catch(() => {});
         },
@@ -182,7 +193,43 @@ const InventoryCountingApp = () => {
     }
     setShowScanner(false);
     setScannerMessage('');
+    setPendingBarcode(null);
   };
+
+  // Abrir modal para vincular barcode a produto
+  const openLinkModal = () => {
+    setShowScanner(false);
+    setLinkSearchTerm('');
+    setShowLinkModal(true);
+  };
+
+  // Vincular barcode ao produto selecionado
+  const handleLinkBarcode = async (product) => {
+    if (!pendingBarcode) return;
+
+    const { error } = await supabase
+      .from('produtos')
+      .update({ codigo_barras: pendingBarcode })
+      .eq('id', product.id);
+
+    if (!error) {
+      await carregarProdutos();
+      setShowLinkModal(false);
+      setSelectedProduct({ ...product, barcode: pendingBarcode });
+      setPendingBarcode(null);
+      setTimeout(() => quantityInputRef.current?.focus(), 100);
+    } else {
+      alert('Erro ao vincular código de barras.');
+    }
+  };
+
+  // Produtos filtrados para modal de vinculação
+  const linkFilteredProducts = linkSearchTerm
+    ? products.filter(p =>
+        p.code.toLowerCase().includes(linkSearchTerm.toLowerCase()) ||
+        p.description.toLowerCase().includes(linkSearchTerm.toLowerCase())
+      )
+    : products;
 
   // Adicionar/atualizar contagem
   const handleAddQuantity = async (e) => {
@@ -247,7 +294,8 @@ const InventoryCountingApp = () => {
         description: r.descricao,
         quantity: r.quantidade,
         unit: r.unidade || 'UN',
-        category: r.categoria
+        category: r.categoria,
+        barcode: r.codigoBarras || ''
       })));
       setShowReport(true);
     }
@@ -255,9 +303,10 @@ const InventoryCountingApp = () => {
 
   // Exportar relatório como CSV
   const handleExportCSV = () => {
-    const headers = ['CÓDIGO', 'DESCRIÇÃO', 'QUANTIDADE', 'UNIDADE', 'CATEGORIA'];
+    const headers = ['CÓDIGO', 'CÓD. BARRAS', 'DESCRIÇÃO', 'QUANTIDADE', 'UNIDADE', 'CATEGORIA'];
     const rows = reportData.map(r => [
       r.code,
+      r.barcode || '',
       `"${r.description}"`,
       r.quantity.toString().replace('.', ','),
       r.unit,
@@ -632,6 +681,7 @@ const InventoryCountingApp = () => {
                 <thead className="bg-gray-100 border-b-2 border-gray-300">
                   <tr>
                     <th className="px-4 py-2 text-left font-bold text-gray-800">Código</th>
+                    <th className="px-4 py-2 text-left font-bold text-gray-800">Cód. Barras</th>
                     <th className="px-4 py-2 text-left font-bold text-gray-800">Descrição</th>
                     <th className="px-4 py-2 text-right font-bold text-gray-800">Quantidade</th>
                     <th className="px-4 py-2 text-center font-bold text-gray-800">Unidade</th>
@@ -642,6 +692,7 @@ const InventoryCountingApp = () => {
                   {reportData.map((row, idx) => (
                     <tr key={idx} className="border-b border-gray-200 hover:bg-gray-50">
                       <td className="px-4 py-3 font-bold text-green-600">{row.code}</td>
+                      <td className="px-4 py-3 text-gray-500 font-mono text-xs">{row.barcode || '-'}</td>
                       <td className="px-4 py-3 text-gray-800">{row.description}</td>
                       <td className="px-4 py-3 text-right font-bold text-gray-800">{row.quantity.toFixed(2)}</td>
                       <td className="px-4 py-3 text-center text-gray-600">{row.unit}</td>
@@ -697,16 +748,81 @@ const InventoryCountingApp = () => {
               <div id="barcode-reader" className="w-full rounded-lg overflow-hidden"></div>
               {scannerMessage && (
                 <div className={`mt-3 p-3 rounded-lg text-sm font-medium ${
-                  scannerMessage.includes('não encontrado')
+                  scannerMessage.includes('não vinculado')
                     ? 'bg-yellow-50 text-yellow-800 border border-yellow-200'
                     : 'bg-red-50 text-red-800 border border-red-200'
                 }`}>
                   {scannerMessage}
                 </div>
               )}
-              <p className="mt-3 text-xs text-gray-500 text-center">
-                Aponte a câmera para o código de barras do produto
-              </p>
+              {pendingBarcode && (
+                <button
+                  onClick={openLinkModal}
+                  className="mt-3 w-full px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg transition flex items-center justify-center gap-2"
+                >
+                  <Link size={18} />
+                  Vincular "{pendingBarcode}" a um produto
+                </button>
+              )}
+              {!pendingBarcode && (
+                <p className="mt-3 text-xs text-gray-500 text-center">
+                  Aponte a câmera para o código de barras do produto
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Vinculação de Código de Barras */}
+      {showLinkModal && pendingBarcode && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
+            <div className="flex justify-between items-center p-4 border-b">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">Vincular Código de Barras</h3>
+                <p className="text-sm text-blue-600 font-mono mt-1">{pendingBarcode}</p>
+              </div>
+              <button
+                onClick={() => { setShowLinkModal(false); setPendingBarcode(null); }}
+                className="p-1 hover:bg-gray-100 rounded-full transition"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-4">
+              <input
+                type="text"
+                value={linkSearchTerm}
+                onChange={(e) => setLinkSearchTerm(e.target.value)}
+                placeholder="Buscar produto por código ou descrição..."
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                autoFocus
+              />
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 pb-4">
+              <div className="space-y-2">
+                {linkFilteredProducts.map(product => (
+                  <button
+                    key={product.id}
+                    onClick={() => handleLinkBarcode(product)}
+                    className="w-full text-left p-3 bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-lg transition"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="font-bold text-gray-800">{product.code}</div>
+                        <div className="text-sm text-gray-600">{product.description}</div>
+                      </div>
+                      {product.barcode && (
+                        <span className="text-xs text-gray-400 font-mono">{product.barcode}</span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+                {linkFilteredProducts.length === 0 && (
+                  <p className="text-gray-500 text-center py-4">Nenhum produto encontrado</p>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -263,7 +263,8 @@ export const gerarRelatorio = async (sessionId) => {
           codigo,
           descricao,
           categoria,
-          unidade_padrao
+          unidade_padrao,
+          codigo_barras
         ),
         usuarios:atualizado_por (
           nome
@@ -280,6 +281,7 @@ export const gerarRelatorio = async (sessionId) => {
       descricao: item.produtos.descricao,
       categoria: item.produtos.categoria,
       unidade: item.produtos.unidade_padrao,
+      codigoBarras: item.produtos.codigo_barras || '',
       quantidade: item.quantidade_total,
       numRegistros: item.numero_registros,
       ultimaAtualizacao: item.ultima_atualizacao,
