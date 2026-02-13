@@ -3,11 +3,11 @@ import {
   Users, Download, BarChart3, Eye, Filter, RefreshCw,
   LogOut, TrendingUp, FileText, AlertCircle, CheckCircle
 } from 'lucide-react';
+import { supabase } from '../services/supabase_integration';
 
 const MasterDashboard = () => {
   // Estados de autenticação
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [, setMasterPassword] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
 
   // Estados de dados
@@ -17,73 +17,77 @@ const MasterDashboard = () => {
 
   // Estados da UI
   const [abaAtiva, setAbaAtiva] = useState('dashboard');
-  const [sessaoSelecionada, setSessionaoSelecionada] = useState(null);
+  const [sessaoSelecionada, setSessaoSelecionada] = useState(null);
   const [showDetalhes, setShowDetalhes] = useState(false);
-  const [filtro, setFiltro] = useState({
-    status: 'todas',
-    dataInicio: '',
-    dataFim: '',
-    usuario: ''
-  });
+  const [filtro, setFiltro] = useState({ status: 'todas' });
   const [loading, setLoading] = useState(false);
 
-  // Dados mock (em produção viriam do Supabase)
   useEffect(() => {
-    carregarDados();
+    if (isLoggedIn) {
+      carregarDados();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isLoggedIn]);
 
-  const carregarDados = () => {
-    // Simular dados de sessões
-    const sessoesSimuladas = [
-      {
-        id: 'sess_001',
-        usuario: { id: 'user_001', nome: 'João Silva' },
-        dataInicio: new Date(Date.now() - 2 * 60 * 60 * 1000),
-        dataFim: new Date(Date.now() - 1.5 * 60 * 60 * 1000),
-        status: 'concluida',
-        totalItens: 245,
-        totalUnidades: 1250.5,
-        itens: [
-          { codigo: 'ADUBO001', descricao: 'Adubo NPK 10-10-10 (50kg)', quantidade: 50, categoria: 'Fertilizantes' },
-          { codigo: 'SEMENTE001', descricao: 'Sementes de Milho Híbrido (20kg)', quantidade: 30, categoria: 'Sementes' },
-          { codigo: 'PESTIC001', descricao: 'Pesticida Natural (1L)', quantidade: 45, categoria: 'Pesticidas' }
-        ]
-      },
-      {
-        id: 'sess_002',
-        usuario: { id: 'user_002', nome: 'Maria Santos' },
-        dataInicio: new Date(Date.now() - 1 * 60 * 60 * 1000),
-        dataFim: null,
-        status: 'ativa',
-        totalItens: 156,
-        totalUnidades: 890.25,
-        itens: [
-          { codigo: 'ADUBO002', descricao: 'Adubo Fosfatado (50kg)', quantidade: 35, categoria: 'Fertilizantes' },
-          { codigo: 'VITAM001', descricao: 'Vitamina para Gado (500ml)', quantidade: 60, categoria: 'Veterinário' }
-        ]
-      },
-      {
-        id: 'sess_003',
-        usuario: { id: 'user_003', nome: 'Carlos Mendes' },
-        dataInicio: new Date(Date.now() - 30 * 60 * 1000),
-        dataFim: null,
-        status: 'ativa',
-        totalItens: 89,
-        totalUnidades: 450.75,
-        itens: [
-          { codigo: 'RACAO001', descricao: 'Ração Balanceada (25kg)', quantidade: 25, categoria: 'Pet Supplies' }
-        ]
-      }
-    ];
+  const carregarDados = async () => {
+    setLoading(true);
+    try {
+      // 1. Buscar sessões com dados do usuário
+      const { data: sessoesData, error: erroSessoes } = await supabase
+        .from('sessoes_contagem')
+        .select(`
+          id,
+          data_inicio,
+          data_fim,
+          status,
+          total_itens_contados,
+          total_unidades_contadas,
+          usuarios:usuario_id (id, nome)
+        `)
+        .order('data_inicio', { ascending: false });
 
-    setSessoes(sessoesSimuladas);
-    setUsuariosAtivos(sessoesSimuladas.filter(s => s.status === 'ativa'));
-    gerarRelatorioConsolidado(sessoesSimuladas);
+      if (erroSessoes) throw erroSessoes;
+
+      // 2. Para cada sessão, buscar os itens contados
+      const sessoesCompletas = await Promise.all(
+        (sessoesData || []).map(async (sessao) => {
+          const { data: itensData } = await supabase
+            .from('itens_contados')
+            .select(`
+              id,
+              quantidade_total,
+              produtos:produto_id (codigo, descricao, categoria)
+            `)
+            .eq('sessao_id', sessao.id);
+
+          return {
+            id: sessao.id,
+            usuario: sessao.usuarios || { id: null, nome: 'Desconhecido' },
+            dataInicio: new Date(sessao.data_inicio),
+            dataFim: sessao.data_fim ? new Date(sessao.data_fim) : null,
+            status: sessao.status,
+            totalItens: sessao.total_itens_contados || 0,
+            totalUnidades: sessao.total_unidades_contadas || 0,
+            itens: (itensData || []).map(item => ({
+              codigo: item.produtos?.codigo || '?',
+              descricao: item.produtos?.descricao || '?',
+              categoria: item.produtos?.categoria || '?',
+              quantidade: item.quantidade_total || 0
+            }))
+          };
+        })
+      );
+
+      setSessoes(sessoesCompletas);
+      setUsuariosAtivos(sessoesCompletas.filter(s => s.status === 'ativa'));
+      gerarRelatorioConsolidado(sessoesCompletas);
+    } catch (erro) {
+      console.error('Erro ao carregar dados:', erro);
+    }
+    setLoading(false);
   };
 
   const gerarRelatorioConsolidado = (sessoesData) => {
-    // Consolidar todos os itens de todas as sessões
     const mapItens = new Map();
 
     sessoesData.forEach(sessao => {
@@ -108,8 +112,7 @@ const MasterDashboard = () => {
       });
     });
 
-    // Converter para array e ordenar por código
-    const relatorio = Array.from(mapItens.values()).sort((a, b) => 
+    const relatorio = Array.from(mapItens.values()).sort((a, b) =>
       a.codigo.localeCompare(b.codigo)
     );
 
@@ -119,10 +122,8 @@ const MasterDashboard = () => {
   // Login Master
   const handleLoginMaster = (e) => {
     e.preventDefault();
-    // Senha simples para demo (em produção seria autenticação real)
     if (passwordInput === '1234') {
       setIsLoggedIn(true);
-      setMasterPassword(passwordInput);
       setPasswordInput('');
     } else {
       alert('Senha incorreta!');
@@ -132,18 +133,19 @@ const MasterDashboard = () => {
   // Logout
   const handleLogout = () => {
     setIsLoggedIn(false);
-    setMasterPassword('');
     setAbaAtiva('dashboard');
   };
 
   // Atualizar dados
   const handleRefresh = () => {
-    setLoading(true);
-    setTimeout(() => {
-      carregarDados();
-      setLoading(false);
-    }, 1000);
+    carregarDados();
   };
+
+  // Sessões filtradas
+  const sessoesFiltradas = sessoes.filter(s => {
+    if (filtro.status === 'todas') return true;
+    return s.status === filtro.status;
+  });
 
   // Exportar relatório consolidado
   const exportarRelatorioCSV = () => {
@@ -213,12 +215,6 @@ const MasterDashboard = () => {
     link.click();
   };
 
-  // Exportar PDF (simulado com formatação)
-  const exportarRelatorioPDF = () => {
-    alert('PDF export será implementado com biblioteca PDF.js ou pdfkit');
-    // Em produção: usar jsPDF ou similar
-  };
-
   // Tela de login
   if (!isLoggedIn) {
     return (
@@ -276,7 +272,7 @@ const MasterDashboard = () => {
             <h1 className="text-2xl font-bold text-gray-800">Dashboard Master</h1>
             <p className="text-sm text-gray-600">👨‍💼 Gerenciamento de Contagens</p>
           </div>
-          
+
           <div className="flex items-center gap-4">
             <button
               onClick={handleRefresh}
@@ -343,8 +339,12 @@ const MasterDashboard = () => {
       </div>
 
       <div className="max-w-7xl mx-auto p-4">
+        {loading && (
+          <div className="text-center py-8 text-gray-500">Carregando dados do Supabase...</div>
+        )}
+
         {/* ABA: DASHBOARD */}
-        {abaAtiva === 'dashboard' && (
+        {abaAtiva === 'dashboard' && !loading && (
           <div className="space-y-6">
             {/* Cards de Resumo */}
             <div className="grid md:grid-cols-4 gap-4">
@@ -434,47 +434,47 @@ const MasterDashboard = () => {
             </div>
 
             {/* Resumo por Categoria */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-bold text-gray-800 mb-4">
-                📊 Resumo por Categoria
-              </h2>
-              <div className="space-y-3">
-                {(() => {
-                  const porCategoria = new Map();
-                  relatorioConsolidado.forEach(item => {
-                    if (!porCategoria.has(item.categoria)) {
-                      porCategoria.set(item.categoria, 0);
-                    }
-                    porCategoria.set(item.categoria, porCategoria.get(item.categoria) + item.quantidade);
-                  });
-
-                  return Array.from(porCategoria.entries())
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([categoria, total]) => {
-                      const percentual = (total / relatorioConsolidado.reduce((s, r) => s + r.quantidade, 0)) * 100;
-                      return (
-                        <div key={categoria}>
-                          <div className="flex justify-between items-center mb-2">
-                            <p className="font-medium text-gray-800">{categoria}</p>
-                            <p className="font-bold text-gray-800">{total.toFixed(1)} un. ({percentual.toFixed(1)}%)</p>
-                          </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full"
-                              style={{ width: `${percentual}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
+            {relatorioConsolidado.length > 0 && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-lg font-bold text-gray-800 mb-4">
+                  📊 Resumo por Categoria
+                </h2>
+                <div className="space-y-3">
+                  {(() => {
+                    const porCategoria = new Map();
+                    const totalGeral = relatorioConsolidado.reduce((s, r) => s + r.quantidade, 0);
+                    relatorioConsolidado.forEach(item => {
+                      porCategoria.set(item.categoria, (porCategoria.get(item.categoria) || 0) + item.quantidade);
                     });
-                })()}
+
+                    return Array.from(porCategoria.entries())
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([categoria, total]) => {
+                        const percentual = totalGeral > 0 ? (total / totalGeral) * 100 : 0;
+                        return (
+                          <div key={categoria}>
+                            <div className="flex justify-between items-center mb-2">
+                              <p className="font-medium text-gray-800">{categoria}</p>
+                              <p className="font-bold text-gray-800">{total.toFixed(1)} un. ({percentual.toFixed(1)}%)</p>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div
+                                className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full"
+                                style={{ width: `${percentual}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      });
+                  })()}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
         {/* ABA: SESSÕES */}
-        {abaAtiva === 'sessoes' && (
+        {abaAtiva === 'sessoes' && !loading && (
           <div className="space-y-6">
             {/* Filtros */}
             <div className="bg-white rounded-lg shadow p-4 flex gap-4 flex-wrap items-end">
@@ -490,7 +490,10 @@ const MasterDashboard = () => {
                   <option value="concluida">Concluídas</option>
                 </select>
               </div>
-              <button className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition text-sm flex items-center gap-2">
+              <button
+                onClick={() => {}}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition text-sm flex items-center gap-2"
+              >
                 <Filter size={16} />
                 Filtrar
               </button>
@@ -511,7 +514,7 @@ const MasterDashboard = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {sessoes.map((sessao) => (
+                  {sessoesFiltradas.map((sessao) => (
                     <tr key={sessao.id} className="border-b border-gray-200 hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-800">{sessao.usuario.nome}</td>
                       <td className="px-4 py-3">
@@ -534,7 +537,7 @@ const MasterDashboard = () => {
                       <td className="px-4 py-3 text-center">
                         <button
                           onClick={() => {
-                            setSessionaoSelecionada(sessao);
+                            setSessaoSelecionada(sessao);
                             setShowDetalhes(true);
                           }}
                           className="text-red-600 hover:text-red-800 font-medium text-xs flex items-center gap-1 justify-center"
@@ -545,6 +548,13 @@ const MasterDashboard = () => {
                       </td>
                     </tr>
                   ))}
+                  {sessoesFiltradas.length === 0 && (
+                    <tr>
+                      <td colSpan="7" className="px-4 py-8 text-center text-gray-500">
+                        Nenhuma sessão encontrada
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -552,7 +562,7 @@ const MasterDashboard = () => {
         )}
 
         {/* ABA: RELATÓRIO CONSOLIDADO */}
-        {abaAtiva === 'relatorio' && (
+        {abaAtiva === 'relatorio' && !loading && (
           <div className="space-y-6">
             {/* Cabeçalho com Exportação */}
             <div className="bg-white rounded-lg shadow p-6">
@@ -560,7 +570,7 @@ const MasterDashboard = () => {
                 <div>
                   <h2 className="text-2xl font-bold text-gray-800">Relatório Consolidado</h2>
                   <p className="text-sm text-gray-600">
-                    Consolidação de todas as contagens de {new Date().toLocaleDateString('pt-BR')}
+                    Consolidação de todas as contagens
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -577,13 +587,6 @@ const MasterDashboard = () => {
                   >
                     <Download size={18} />
                     JSON
-                  </button>
-                  <button
-                    onClick={exportarRelatorioPDF}
-                    className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg transition flex items-center gap-2"
-                  >
-                    <Download size={18} />
-                    PDF
                   </button>
                 </div>
               </div>
@@ -643,18 +646,27 @@ const MasterDashboard = () => {
                       </td>
                     </tr>
                   ))}
+                  {relatorioConsolidado.length === 0 && (
+                    <tr>
+                      <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
+                        Nenhum dado de contagem encontrado
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
-                <tfoot className="bg-gray-100 border-t-2 border-gray-300">
-                  <tr>
-                    <td colSpan="3" className="px-4 py-3 font-bold text-gray-800">TOTAL</td>
-                    <td className="px-4 py-3 text-right font-bold text-gray-800">
-                      <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full">
-                        {relatorioConsolidado.reduce((s, r) => s + r.quantidade, 0).toFixed(2)}
-                      </span>
-                    </td>
-                    <td></td>
-                  </tr>
-                </tfoot>
+                {relatorioConsolidado.length > 0 && (
+                  <tfoot className="bg-gray-100 border-t-2 border-gray-300">
+                    <tr>
+                      <td colSpan="3" className="px-4 py-3 font-bold text-gray-800">TOTAL</td>
+                      <td className="px-4 py-3 text-right font-bold text-gray-800">
+                        <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full">
+                          {relatorioConsolidado.reduce((s, r) => s + r.quantidade, 0).toFixed(2)}
+                        </span>
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </div>
@@ -708,18 +720,22 @@ const MasterDashboard = () => {
               <div>
                 <h4 className="font-bold text-gray-800 mb-3">Itens Contados</h4>
                 <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {sessaoSelecionada.itens.map((item, idx) => (
-                    <div key={idx} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <p className="font-bold text-red-600">{item.codigo}</p>
-                          <p className="text-sm text-gray-600">{item.descricao}</p>
-                          <p className="text-xs text-gray-500">{item.categoria}</p>
+                  {sessaoSelecionada.itens.length === 0 ? (
+                    <p className="text-gray-500 text-center py-4">Nenhum item contado nesta sessão</p>
+                  ) : (
+                    sessaoSelecionada.itens.map((item, idx) => (
+                      <div key={idx} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-bold text-red-600">{item.codigo}</p>
+                            <p className="text-sm text-gray-600">{item.descricao}</p>
+                            <p className="text-xs text-gray-500">{item.categoria}</p>
+                          </div>
+                          <p className="font-bold text-gray-800">{item.quantidade.toFixed(1)} un.</p>
                         </div>
-                        <p className="font-bold text-gray-800">{item.quantidade.toFixed(1)} un.</p>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
 
