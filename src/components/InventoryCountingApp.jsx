@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Download, LogOut, Trash2 } from 'lucide-react';
+import { Plus, Download, LogOut, Trash2, Camera, X } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
 
 const InventoryCountingApp = () => {
   // Estados de autenticação e usuário
@@ -21,25 +22,28 @@ const InventoryCountingApp = () => {
   const [syncStatus, setSyncStatus] = useState('synced');
   const [lastSync, setLastSync] = useState(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannerMessage, setScannerMessage] = useState('');
 
   const searchInputRef = useRef(null);
   const quantityInputRef = useRef(null);
+  const scannerRef = useRef(null);
 
   // Produtos de exemplo (em produção, viriam de um banco de dados)
   useEffect(() => {
     const mockProducts = [
-      { id: 1, code: 'ADUBO001', description: 'Adubo NPK 10-10-10 (50kg)', category: 'Fertilizantes' },
-      { id: 2, code: 'SEMENTE002', description: 'Sementes de Milho Híbrido (20kg)', category: 'Sementes' },
-      { id: 3, code: 'PESTIC003', description: 'Pesticida Natural (1L)', category: 'Pesticidas' },
-      { id: 4, code: 'VITAM004', description: 'Vitamina para Gado (500ml)', category: 'Veterinário' },
-      { id: 5, code: 'ADUBO005', description: 'Adubo Fosfatado (50kg)', category: 'Fertilizantes' },
-      { id: 6, code: 'SEMENTE006', description: 'Sementes de Soja (25kg)', category: 'Sementes' },
-      { id: 7, code: 'PESTIC007', description: 'Fungicida (2L)', category: 'Pesticidas' },
-      { id: 8, code: 'RACAO008', description: 'Ração Balanceada (25kg)', category: 'Pet Supplies' },
-      { id: 9, code: 'ADUBO009', description: 'Adubo Potássio (50kg)', category: 'Fertilizantes' },
-      { id: 10, code: 'SEMENTE010', description: 'Sementes de Arroz (20kg)', category: 'Sementes' },
-      { id: 11, code: 'PESTIC011', description: 'Inseticida (5L)', category: 'Pesticidas' },
-      { id: 12, code: 'VITAM012', description: 'Suplemento Mineral (1kg)', category: 'Veterinário' },
+      { id: 1, code: 'ADUBO001', barcode: '7891000100101', description: 'Adubo NPK 10-10-10 (50kg)', category: 'Fertilizantes' },
+      { id: 2, code: 'SEMENTE002', barcode: '7891000100202', description: 'Sementes de Milho Híbrido (20kg)', category: 'Sementes' },
+      { id: 3, code: 'PESTIC003', barcode: '7891000100303', description: 'Pesticida Natural (1L)', category: 'Pesticidas' },
+      { id: 4, code: 'VITAM004', barcode: '7891000100404', description: 'Vitamina para Gado (500ml)', category: 'Veterinário' },
+      { id: 5, code: 'ADUBO005', barcode: '7891000100505', description: 'Adubo Fosfatado (50kg)', category: 'Fertilizantes' },
+      { id: 6, code: 'SEMENTE006', barcode: '7891000100606', description: 'Sementes de Soja (25kg)', category: 'Sementes' },
+      { id: 7, code: 'PESTIC007', barcode: '7891000100707', description: 'Fungicida (2L)', category: 'Pesticidas' },
+      { id: 8, code: 'RACAO008', barcode: '7891000100808', description: 'Ração Balanceada (25kg)', category: 'Pet Supplies' },
+      { id: 9, code: 'ADUBO009', barcode: '7891000100909', description: 'Adubo Potássio (50kg)', category: 'Fertilizantes' },
+      { id: 10, code: 'SEMENTE010', barcode: '7891000101010', description: 'Sementes de Arroz (20kg)', category: 'Sementes' },
+      { id: 11, code: 'PESTIC011', barcode: '7891000101111', description: 'Inseticida (5L)', category: 'Pesticidas' },
+      { id: 12, code: 'VITAM012', barcode: '7891000101212', description: 'Suplemento Mineral (1kg)', category: 'Veterinário' },
     ];
     setProducts(mockProducts);
   }, []);
@@ -66,6 +70,50 @@ const InventoryCountingApp = () => {
     setCounting({});
     setReportData([]);
     setShowReport(false);
+  };
+
+  // Abrir scanner de código de barras
+  const openScanner = () => {
+    setScannerMessage('');
+    setShowScanner(true);
+    setTimeout(() => {
+      const html5Qrcode = new Html5Qrcode('barcode-reader');
+      scannerRef.current = html5Qrcode;
+      html5Qrcode.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 150 } },
+        (decodedText) => {
+          const product = products.find(
+            p => p.barcode === decodedText || p.code === decodedText
+          );
+          html5Qrcode.stop().then(() => {
+            scannerRef.current = null;
+            if (product) {
+              setShowScanner(false);
+              setSelectedProduct(product);
+              setSearchTerm('');
+              setTimeout(() => quantityInputRef.current?.focus(), 100);
+            } else {
+              setScannerMessage(`Código "${decodedText}" não encontrado no cadastro.`);
+            }
+          }).catch(() => {});
+        },
+        () => {} // erro silencioso a cada frame sem leitura
+      ).catch(() => {
+        setScannerMessage('Não foi possível acessar a câmera. Verifique as permissões.');
+      });
+    }, 300);
+  };
+
+  // Fechar scanner
+  const closeScanner = () => {
+    if (scannerRef.current) {
+      scannerRef.current.stop().then(() => {
+        scannerRef.current = null;
+      }).catch(() => {});
+    }
+    setShowScanner(false);
+    setScannerMessage('');
   };
 
   // Filtrar produtos baseado na busca
@@ -297,15 +345,26 @@ const InventoryCountingApp = () => {
                       Código ou Descrição do Produto
                     </label>
                     <div className="relative">
-                      <input
-                        ref={searchInputRef}
-                        type="text"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        placeholder="Digite o código ou descrição..."
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
-                        autoComplete="off"
-                      />
+                      <div className="flex gap-2">
+                        <input
+                          ref={searchInputRef}
+                          type="text"
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          placeholder="Digite o código ou descrição..."
+                          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none"
+                          autoComplete="off"
+                        />
+                        <button
+                          type="button"
+                          onClick={openScanner}
+                          className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition flex items-center gap-2"
+                          title="Escanear código de barras"
+                        >
+                          <Camera size={20} />
+                          <span className="hidden sm:inline text-sm font-medium">Escanear</span>
+                        </button>
+                      </div>
                       
                       {/* Dropdown de produtos */}
                       {searchTerm && filteredProducts.length > 0 && (
@@ -550,6 +609,38 @@ const InventoryCountingApp = () => {
           </div>
         )}
       </div>
+
+      {/* Modal do Scanner de Código de Barras */}
+      {showScanner && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h3 className="text-lg font-bold text-gray-800">Escanear Código de Barras</h3>
+              <button
+                onClick={closeScanner}
+                className="p-1 hover:bg-gray-100 rounded-full transition"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-4">
+              <div id="barcode-reader" className="w-full rounded-lg overflow-hidden"></div>
+              {scannerMessage && (
+                <div className={`mt-3 p-3 rounded-lg text-sm font-medium ${
+                  scannerMessage.includes('não encontrado')
+                    ? 'bg-yellow-50 text-yellow-800 border border-yellow-200'
+                    : 'bg-red-50 text-red-800 border border-red-200'
+                }`}>
+                  {scannerMessage}
+                </div>
+              )}
+              <p className="mt-3 text-xs text-gray-500 text-center">
+                Aponte a câmera para o código de barras do produto
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de confirmação */}
       {showClearConfirm && (
