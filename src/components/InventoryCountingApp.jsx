@@ -60,17 +60,24 @@ const InventoryCountingApp = () => {
     }
   }, []);
 
-  // Carregar produtos do Supabase ao iniciar
+  // Buscar produtos sob demanda (para 15k+ itens)
   useEffect(() => {
-    carregarProdutos();
-  }, []);
+    if (!searchTerm || searchTerm.length < 2) {
+      setProducts([]);
+      return;
+    }
+    const timer = setTimeout(() => buscarProdutosPorTermo(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
-  const carregarProdutos = async () => {
+  const buscarProdutosPorTermo = async (termo) => {
     const { data, error } = await supabase
       .from('produtos')
       .select('id, codigo, descricao, categoria, unidade_padrao, codigo_barras')
       .eq('ativo', true)
-      .order('codigo');
+      .or(`codigo.ilike.%${termo}%,descricao.ilike.%${termo}%,codigo_barras.eq.${termo}`)
+      .order('codigo')
+      .limit(30);
 
     if (!error && data) {
       setProducts(data.map(p => ({
@@ -82,6 +89,27 @@ const InventoryCountingApp = () => {
         barcode: p.codigo_barras || ''
       })));
     }
+  };
+
+  const buscarPorCodigoBarras = async (barcode) => {
+    const { data, error } = await supabase
+      .from('produtos')
+      .select('id, codigo, descricao, categoria, unidade_padrao, codigo_barras')
+      .or(`codigo_barras.eq.${barcode},codigo.eq.${barcode}`)
+      .limit(1)
+      .single();
+
+    if (!error && data) {
+      return {
+        id: data.id,
+        code: data.codigo,
+        description: data.descricao,
+        category: data.categoria,
+        unit: data.unidade_padrao,
+        barcode: data.codigo_barras || ''
+      };
+    }
+    return null;
   };
 
   // Carregar itens contados quando sessão estiver ativa
@@ -101,11 +129,8 @@ const InventoryCountingApp = () => {
     }
   };
 
-  // Filtrar produtos baseado na busca
-  const filteredProducts = products.filter(p =>
-    p.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.description.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Produtos já vêm filtrados do Supabase
+  const filteredProducts = products;
 
   // Login
   const handleLogin = async (e) => {
@@ -161,11 +186,9 @@ const InventoryCountingApp = () => {
         { facingMode: 'environment' },
         { fps: 10, qrbox: { width: 250, height: 150 } },
         (decodedText) => {
-          const product = products.find(
-            p => p.barcode === decodedText || p.code === decodedText
-          );
-          html5Qrcode.stop().then(() => {
+          html5Qrcode.stop().then(async () => {
             scannerRef.current = null;
+            const product = await buscarPorCodigoBarras(decodedText);
             if (product) {
               setShowScanner(false);
               setSelectedProduct(product);
@@ -213,7 +236,6 @@ const InventoryCountingApp = () => {
       .eq('id', product.id);
 
     if (!error) {
-      await carregarProdutos();
       setShowLinkModal(false);
       setSelectedProduct({ ...product, barcode: pendingBarcode });
       setPendingBarcode(null);
@@ -223,13 +245,38 @@ const InventoryCountingApp = () => {
     }
   };
 
-  // Produtos filtrados para modal de vinculação
-  const linkFilteredProducts = linkSearchTerm
-    ? products.filter(p =>
-        p.code.toLowerCase().includes(linkSearchTerm.toLowerCase()) ||
-        p.description.toLowerCase().includes(linkSearchTerm.toLowerCase())
-      )
-    : products;
+  // Produtos filtrados para modal de vinculação (busca no Supabase)
+  const [linkProducts, setLinkProducts] = useState([]);
+
+  useEffect(() => {
+    if (!linkSearchTerm || linkSearchTerm.length < 2) {
+      setLinkProducts([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const { data, error } = await supabase
+        .from('produtos')
+        .select('id, codigo, descricao, categoria, unidade_padrao, codigo_barras')
+        .eq('ativo', true)
+        .or(`codigo.ilike.%${linkSearchTerm}%,descricao.ilike.%${linkSearchTerm}%`)
+        .order('codigo')
+        .limit(30);
+
+      if (!error && data) {
+        setLinkProducts(data.map(p => ({
+          id: p.id,
+          code: p.codigo,
+          description: p.descricao,
+          category: p.categoria,
+          unit: p.unidade_padrao,
+          barcode: p.codigo_barras || ''
+        })));
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [linkSearchTerm]);
+
+  const linkFilteredProducts = linkProducts;
 
   // Adicionar/atualizar contagem
   const handleAddQuantity = async (e) => {
@@ -489,7 +536,7 @@ const InventoryCountingApp = () => {
                       </div>
 
                       {/* Dropdown de produtos */}
-                      {searchTerm && filteredProducts.length > 0 && (
+                      {searchTerm && searchTerm.length >= 2 && filteredProducts.length > 0 && (
                         <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
                           {filteredProducts.map(product => (
                             <button

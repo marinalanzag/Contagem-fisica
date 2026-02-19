@@ -24,6 +24,7 @@ CREATE TABLE produtos (
   descricao TEXT NOT NULL,
   categoria VARCHAR(100),
   unidade_padrao VARCHAR(20) DEFAULT 'UN',
+  codigo_barras VARCHAR(50),
   ativo BOOLEAN DEFAULT true,
   data_atualizacao TIMESTAMP DEFAULT NOW()
 );
@@ -81,6 +82,7 @@ CREATE INDEX idx_historico_usuario ON historico_contagem(usuario_id);
 CREATE INDEX idx_historico_timestamp ON historico_contagem(timestamp DESC);
 CREATE INDEX idx_produtos_codigo ON produtos(codigo);
 CREATE INDEX idx_produtos_categoria ON produtos(categoria);
+CREATE INDEX idx_produtos_barras ON produtos(codigo_barras);
 
 -- 3. FUNÇÕES ARMAZENADAS (RPC)
 -- ============================================================================
