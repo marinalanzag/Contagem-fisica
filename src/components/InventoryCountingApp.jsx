@@ -34,6 +34,7 @@ const InventoryCountingApp = () => {
   const [syncStatus, setSyncStatus] = useState('synced');
   const [lastSync, setLastSync] = useState(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [scannerMessage, setScannerMessage] = useState('');
   const [pendingBarcode, setPendingBarcode] = useState(null);
@@ -132,7 +133,7 @@ const InventoryCountingApp = () => {
   // Produtos já vêm filtrados do Supabase
   const filteredProducts = products;
 
-  // Login
+  // Login - tenta retomar sessão ativa ou cria uma nova
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!userName.trim()) return;
@@ -140,30 +141,88 @@ const InventoryCountingApp = () => {
     setLoginLoading(true);
     setLoginError('');
 
-    const resultado = await iniciarSessao(userName.trim());
+    try {
+      // 1. Buscar usuário existente
+      const { data: usuario } = await supabase
+        .from('usuarios')
+        .select('id')
+        .eq('nome', userName.trim())
+        .single();
 
-    if (resultado.sucesso) {
-      setUserId(resultado.usuario_id);
-      setSessionId(resultado.sessao_id);
-      setIsLoggedIn(true);
-      localStorage.setItem('contagem_sessao', JSON.stringify({
-        usuario_id: resultado.usuario_id,
-        sessao_id: resultado.sessao_id,
-        nome: userName.trim()
-      }));
-      setTimeout(() => searchInputRef.current?.focus(), 100);
-    } else {
-      setLoginError('Erro ao iniciar sessão. Verifique sua conexão.');
+      if (usuario) {
+        // 2. Verificar se tem sessão ativa
+        const { data: sessaoAtiva } = await supabase
+          .from('sessoes_contagem')
+          .select('id')
+          .eq('usuario_id', usuario.id)
+          .eq('status', 'ativa')
+          .order('data_inicio', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (sessaoAtiva) {
+          // Retomar sessão existente
+          setUserId(usuario.id);
+          setSessionId(sessaoAtiva.id);
+          setIsLoggedIn(true);
+          localStorage.setItem('contagem_sessao', JSON.stringify({
+            usuario_id: usuario.id,
+            sessao_id: sessaoAtiva.id,
+            nome: userName.trim()
+          }));
+          setLoginLoading(false);
+          setTimeout(() => searchInputRef.current?.focus(), 100);
+          return;
+        }
+      }
+
+      // 3. Sem sessão ativa - criar nova
+      const resultado = await iniciarSessao(userName.trim());
+
+      if (resultado.sucesso) {
+        setUserId(resultado.usuario_id);
+        setSessionId(resultado.sessao_id);
+        setIsLoggedIn(true);
+        localStorage.setItem('contagem_sessao', JSON.stringify({
+          usuario_id: resultado.usuario_id,
+          sessao_id: resultado.sessao_id,
+          nome: userName.trim()
+        }));
+        setTimeout(() => searchInputRef.current?.focus(), 100);
+      } else {
+        setLoginError('Erro ao iniciar sessão. Verifique sua conexão.');
+      }
+    } catch {
+      setLoginError('Erro ao conectar. Verifique sua conexão.');
     }
 
     setLoginLoading(false);
   };
 
-  // Logout
-  const handleLogout = async () => {
+  // Logout - mostrar modal de confirmação
+  const handleLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  // Pausar sessão (sair sem finalizar - pode retomar depois)
+  const handlePauseSession = () => {
+    setShowLogoutConfirm(false);
+    setIsLoggedIn(false);
+    setUserId(null);
+    setSessionId(null);
+    setUserName('');
+    setCountedItems([]);
+    setReportData([]);
+    setShowReport(false);
+    // Mantém localStorage para poder retomar
+  };
+
+  // Finalizar sessão (encerrar definitivamente)
+  const handleFinalizeSession = async () => {
     if (sessionId) {
       await finalizarSessao(sessionId);
     }
+    setShowLogoutConfirm(false);
     setIsLoggedIn(false);
     setUserId(null);
     setSessionId(null);
@@ -875,7 +934,7 @@ const InventoryCountingApp = () => {
         </div>
       )}
 
-      {/* Modal de confirmação */}
+      {/* Modal de confirmação - Limpar contagem */}
       {showClearConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm mx-4">
@@ -895,6 +954,44 @@ const InventoryCountingApp = () => {
                 className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg transition"
               >
                 Limpar Tudo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmação - Sair */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm mx-4">
+            <h3 className="text-lg font-bold text-gray-800 mb-4">Sair da Contagem</h3>
+            <p className="text-gray-600 mb-6">
+              Você tem {countedItems.length} itens contados nesta sessão. O que deseja fazer?
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={handlePauseSession}
+                className="w-full px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg transition"
+              >
+                Pausar e Sair
+                <span className="block text-xs font-normal mt-1 opacity-80">
+                  Sua contagem será mantida. Ao voltar com o mesmo nome, retoma de onde parou.
+                </span>
+              </button>
+              <button
+                onClick={handleFinalizeSession}
+                className="w-full px-4 py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg transition"
+              >
+                Finalizar Sessão
+                <span className="block text-xs font-normal mt-1 opacity-80">
+                  Encerra a sessão definitivamente. Os dados ficam salvos para o relatório consolidado.
+                </span>
+              </button>
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold rounded-lg transition"
+              >
+                Cancelar
               </button>
             </div>
           </div>
