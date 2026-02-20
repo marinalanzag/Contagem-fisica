@@ -265,8 +265,8 @@ const InventoryCountingApp = () => {
         {
           fps: 15,
           qrbox: (viewfinderWidth, viewfinderHeight) => ({
-            width: Math.floor(viewfinderWidth * 0.95),
-            height: Math.floor(viewfinderHeight * 0.25),
+            width: Math.floor(viewfinderWidth * 0.9),
+            height: Math.floor(viewfinderHeight * 0.35),
           }),
         },
         (decodedText) => {
@@ -854,9 +854,9 @@ const InventoryCountingApp = () => {
       {/* Scanner de Código de Barras - Tela Cheia */}
       {showScanner && (
         <div className="fixed inset-0 bg-black z-50 flex flex-col">
-          {/* Video container - fills entire screen */}
-          <div className="relative flex-1 overflow-hidden">
-            <div id="barcode-reader" className="w-full h-full"></div>
+          {/* Video container - flex-1 fills remaining space, library controls video aspect ratio */}
+          <div className="relative flex-1 flex items-center justify-center overflow-hidden">
+            <div id="barcode-reader" className="w-full"></div>
 
             {/* Green scan line overlay */}
             <div className="scanner-scanline"></div>
@@ -871,7 +871,7 @@ const InventoryCountingApp = () => {
           </div>
 
           {/* Bottom overlay area */}
-          <div className="bg-black px-4 pb-6 pt-3">
+          <div className="bg-black px-4 pb-6 pt-3 shrink-0">
             {scannerMessage && (
               <div className={`mb-3 p-3 rounded-lg text-sm font-medium ${
                 scannerMessage.includes('não vinculado')

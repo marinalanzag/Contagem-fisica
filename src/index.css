@@ -18,18 +18,15 @@ code {
 
 /* ===== Full-screen Barcode Scanner ===== */
 
-/* Make the scanner fill its container */
+/* Scanner container - full width, library controls height/aspect ratio */
 #barcode-reader {
   width: 100% !important;
-  height: 100% !important;
   border: none !important;
 }
 
-#barcode-reader video {
-  object-fit: cover !important;
-  width: 100% !important;
-  height: 100% !important;
-}
+/* IMPORTANT: Do NOT override video sizing (object-fit, width, height).
+   html5-qrcode captures frames based on actual video dimensions.
+   CSS visual transforms cause coordinate mismatch and break scanning. */
 
 /* Hide default html5-qrcode UI elements */
 #barcode-reader__scan_region > img {
@@ -44,7 +41,7 @@ code {
   display: none !important;
 }
 
-/* Make shaded region more transparent */
+/* Reduce opacity of shaded region around qrbox */
 #barcode-reader__scan_region {
   position: relative;
 }
@@ -52,17 +49,17 @@ code {
 /* Green scan line animation */
 @keyframes scanline-move {
   0%, 100% {
-    top: 40%;
+    top: 35%;
   }
   50% {
-    top: 60%;
+    top: 65%;
   }
 }
 
 .scanner-scanline {
   position: absolute;
-  left: 5%;
-  right: 5%;
+  left: 3%;
+  right: 3%;
   height: 3px;
   background: #22c55e;
   box-shadow: 0 0 8px 2px rgba(34, 197, 94, 0.6);
