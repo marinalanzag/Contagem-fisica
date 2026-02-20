@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, Download, LogOut, Trash2, Camera, X, Link } from 'lucide-react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import {
   iniciarSessao,
   adicionarQuantidade,
@@ -239,11 +239,27 @@ const InventoryCountingApp = () => {
     setPendingBarcode(null);
     setShowScanner(true);
     setTimeout(() => {
-      const html5Qrcode = new Html5Qrcode('barcode-reader');
+      const formatsBarcode = [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.ITF,
+        Html5QrcodeSupportedFormats.CODABAR,
+      ];
+      const html5Qrcode = new Html5Qrcode('barcode-reader', { formatsToSupport: formatsBarcode });
       scannerRef.current = html5Qrcode;
       html5Qrcode.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 150 } },
+        {
+          fps: 15,
+          qrbox: (viewfinderWidth, viewfinderHeight) => ({
+            width: Math.floor(viewfinderWidth * 0.85),
+            height: Math.floor(viewfinderHeight * 0.3),
+          }),
+        },
         (decodedText) => {
           html5Qrcode.stop().then(async () => {
             scannerRef.current = null;
