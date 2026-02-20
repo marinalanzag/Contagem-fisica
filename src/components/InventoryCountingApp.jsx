@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Download, LogOut, Trash2, Camera, X, Link, ArrowLeft } from 'lucide-react';
+import { Plus, Download, LogOut, Trash2, Camera, X, Link, ArrowLeft, Search } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import {
   iniciarSessao,
@@ -47,6 +47,7 @@ const InventoryCountingApp = () => {
   const [pendingBarcode, setPendingBarcode] = useState(null);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [linkSearchTerm, setLinkSearchTerm] = useState('');
+  const [manualBarcode, setManualBarcode] = useState('');
 
   const searchInputRef = useRef(null);
   const quantityInputRef = useRef(null);
@@ -242,10 +243,26 @@ const InventoryCountingApp = () => {
     localStorage.removeItem('contagem_sessao');
   };
 
+  // Processar código de barras (usado tanto pelo scanner quanto pela entrada manual)
+  const processarCodigoBarras = async (code) => {
+    const product = await buscarPorCodigoBarras(code);
+    if (product) {
+      setShowScanner(false);
+      setSelectedProduct(product);
+      setSearchTerm('');
+      setManualBarcode('');
+      setTimeout(() => quantityInputRef.current?.focus(), 100);
+    } else {
+      setPendingBarcode(code);
+      setScannerMessage(`Código "${code}" não vinculado a nenhum produto.`);
+    }
+  };
+
   // Abrir scanner de código de barras
   const openScanner = () => {
     setScannerMessage('');
     setPendingBarcode(null);
+    setManualBarcode('');
     setShowScanner(true);
     setTimeout(() => {
       const formatsBarcode = [
@@ -270,18 +287,9 @@ const InventoryCountingApp = () => {
           }),
         },
         (decodedText) => {
-          html5Qrcode.stop().then(async () => {
+          html5Qrcode.stop().then(() => {
             scannerRef.current = null;
-            const product = await buscarPorCodigoBarras(decodedText);
-            if (product) {
-              setShowScanner(false);
-              setSelectedProduct(product);
-              setSearchTerm('');
-              setTimeout(() => quantityInputRef.current?.focus(), 100);
-            } else {
-              setPendingBarcode(decodedText);
-              setScannerMessage(`Código "${decodedText}" não vinculado a nenhum produto.`);
-            }
+            processarCodigoBarras(decodedText);
           }).catch(() => {});
         },
         () => {}
@@ -289,6 +297,24 @@ const InventoryCountingApp = () => {
         setScannerMessage('Não foi possível acessar a câmera. Verifique as permissões.');
       });
     }, 300);
+  };
+
+  // Buscar código de barras digitado manualmente
+  const handleManualBarcodeSubmit = (e) => {
+    e.preventDefault();
+    const code = manualBarcode.trim();
+    if (!code) return;
+    // Parar o scanner antes de processar
+    if (scannerRef.current) {
+      scannerRef.current.stop().then(() => {
+        scannerRef.current = null;
+        processarCodigoBarras(code);
+      }).catch(() => {
+        processarCodigoBarras(code);
+      });
+    } else {
+      processarCodigoBarras(code);
+    }
   };
 
   // Fechar scanner
@@ -301,6 +327,7 @@ const InventoryCountingApp = () => {
     setShowScanner(false);
     setScannerMessage('');
     setPendingBarcode(null);
+    setManualBarcode('');
   };
 
   // Abrir modal para vincular barcode a produto
@@ -890,9 +917,27 @@ const InventoryCountingApp = () => {
                 Vincular "{pendingBarcode}" a um produto
               </button>
             )}
-            <p className="text-sm text-gray-400 text-center italic">
+            <p className="text-sm text-gray-400 text-center italic mb-3">
               Posicione a linha verde sobre o código de barras
             </p>
+            <form onSubmit={handleManualBarcodeSubmit} className="flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={manualBarcode}
+                onChange={(e) => setManualBarcode(e.target.value)}
+                placeholder="Ou digite o código aqui"
+                className="flex-1 px-3 py-2 rounded-lg bg-gray-800 text-white border border-gray-600 placeholder-gray-500 text-sm focus:outline-none focus:border-green-500"
+              />
+              <button
+                type="submit"
+                disabled={!manualBarcode.trim()}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:text-gray-500 text-white font-bold rounded-lg transition flex items-center gap-1"
+              >
+                <Search size={16} />
+                Buscar
+              </button>
+            </form>
           </div>
         </div>
       )}
