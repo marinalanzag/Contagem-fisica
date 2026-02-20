@@ -4,6 +4,7 @@ import {
   LogOut, TrendingUp, FileText, AlertCircle, CheckCircle
 } from 'lucide-react';
 import { supabase } from '../services/supabase_integration';
+import * as XLSX from 'xlsx';
 
 const MasterDashboard = () => {
   // Estados de autenticação
@@ -56,7 +57,7 @@ const MasterDashboard = () => {
             .select(`
               id,
               quantidade_total,
-              produtos:produto_id (codigo, descricao, categoria)
+              produtos:produto_id (codigo, descricao, categoria, codigo_barras)
             `)
             .eq('sessao_id', sessao.id);
 
@@ -72,6 +73,7 @@ const MasterDashboard = () => {
               codigo: item.produtos?.codigo || '?',
               descricao: item.produtos?.descricao || '?',
               categoria: item.produtos?.categoria || '?',
+              codigoBarras: item.produtos?.codigo_barras || '',
               quantidade: item.quantidade_total || 0
             }))
           };
@@ -105,6 +107,7 @@ const MasterDashboard = () => {
             codigo: item.codigo,
             descricao: item.descricao,
             categoria: item.categoria,
+            codigoBarras: item.codigoBarras || '',
             quantidade: item.quantidade,
             usuarios: [sessao.usuario.nome]
           });
@@ -213,6 +216,30 @@ const MasterDashboard = () => {
     link.href = URL.createObjectURL(blob);
     link.download = `relatorio_consolidado_${new Date().toISOString().split('T')[0]}.json`;
     link.click();
+  };
+
+  // Exportar relatório Inventário (Excel)
+  const exportarInventarioXLSX = () => {
+    const dados = relatorioConsolidado.map(r => ({
+      'CÓDIGO INTERNO': r.codigo,
+      'CÓDIGO EAN': r.codigoBarras || '',
+      'DESCRIÇÃO': r.descricao,
+      'QUANTIDADE': r.quantidade
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(dados);
+
+    // Ajustar largura das colunas
+    ws['!cols'] = [
+      { wch: 15 },  // CÓDIGO INTERNO
+      { wch: 18 },  // CÓDIGO EAN
+      { wch: 50 },  // DESCRIÇÃO
+      { wch: 15 },  // QUANTIDADE
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Inventário');
+    XLSX.writeFile(wb, `inventario_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   // Tela de login
@@ -587,6 +614,13 @@ const MasterDashboard = () => {
                   >
                     <Download size={18} />
                     JSON
+                  </button>
+                  <button
+                    onClick={exportarInventarioXLSX}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition flex items-center gap-2"
+                  >
+                    <FileText size={18} />
+                    Inventário
                   </button>
                 </div>
               </div>
