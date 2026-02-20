@@ -6,11 +6,18 @@ import {
   adicionarQuantidade,
   corrigirQuantidade,
   removerItemContado,
-  obterItensContados,
+  obterTodosItensUsuario,
   gerarRelatorio,
   finalizarSessao,
   supabase
 } from '../services/supabase_integration';
+
+const CONTADORES = [
+  'Adriane','Amanda','Arthur','Carlão','Cida',
+  'Claudiano','Eulinho','Fernanda','Guilherme','Gustavo',
+  'Iêssa','Ivo','Jéssica','Juliene','Márcio',
+  'Marina','Michele','Patricia','Renato','Ruan','Werisson'
+];
 
 const InventoryCountingApp = () => {
   // Estados de autenticação e usuário
@@ -113,17 +120,17 @@ const InventoryCountingApp = () => {
     return null;
   };
 
-  // Carregar itens contados quando sessão estiver ativa
+  // Carregar todos os itens do usuário (todas as sessões)
   useEffect(() => {
-    if (sessionId) {
+    if (userId) {
       carregarItensContados();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [userId]);
 
   const carregarItensContados = async () => {
-    if (!sessionId) return;
-    const resultado = await obterItensContados(sessionId);
+    if (!userId) return;
+    const resultado = await obterTodosItensUsuario(userId);
     if (resultado.sucesso) {
       setCountedItems(resultado.dados);
       setLastSync(new Date());
@@ -134,10 +141,12 @@ const InventoryCountingApp = () => {
   const filteredProducts = products;
 
   // Login - tenta retomar sessão ativa ou cria uma nova
-  const handleLogin = async (e) => {
+  const handleLogin = async (e, nomeOverride) => {
     e.preventDefault();
-    if (!userName.trim()) return;
+    const nome = nomeOverride || userName;
+    if (!nome.trim()) return;
 
+    setUserName(nome);
     setLoginLoading(true);
     setLoginError('');
 
@@ -146,7 +155,7 @@ const InventoryCountingApp = () => {
       const { data: usuario } = await supabase
         .from('usuarios')
         .select('id')
-        .eq('nome', userName.trim())
+        .eq('nome', nome.trim())
         .single();
 
       if (usuario) {
@@ -168,7 +177,7 @@ const InventoryCountingApp = () => {
           localStorage.setItem('contagem_sessao', JSON.stringify({
             usuario_id: usuario.id,
             sessao_id: sessaoAtiva.id,
-            nome: userName.trim()
+            nome: nome.trim()
           }));
           setLoginLoading(false);
           setTimeout(() => searchInputRef.current?.focus(), 100);
@@ -177,7 +186,7 @@ const InventoryCountingApp = () => {
       }
 
       // 3. Sem sessão ativa - criar nova
-      const resultado = await iniciarSessao(userName.trim());
+      const resultado = await iniciarSessao(nome.trim());
 
       if (resultado.sucesso) {
         setUserId(resultado.usuario_id);
@@ -186,7 +195,7 @@ const InventoryCountingApp = () => {
         localStorage.setItem('contagem_sessao', JSON.stringify({
           usuario_id: resultado.usuario_id,
           sessao_id: resultado.sessao_id,
-          nome: userName.trim()
+          nome: nome.trim()
         }));
         setTimeout(() => searchInputRef.current?.focus(), 100);
       } else {
@@ -492,7 +501,7 @@ const InventoryCountingApp = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
-          <div className="text-center mb-8">
+          <div className="text-center mb-6">
             <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
               <span className="text-3xl text-white">📦</span>
             </div>
@@ -500,41 +509,30 @@ const InventoryCountingApp = () => {
             <p className="text-gray-600 mt-2">O FAZENDEIRO LTDA</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Seu Nome Completo
-              </label>
-              <input
-                type="text"
-                value={userName}
-                onChange={(e) => setUserName(e.target.value)}
-                placeholder="Ex: João Silva"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition"
-                autoFocus
-                disabled={loginLoading}
-              />
+          <p className="text-sm font-medium text-gray-700 mb-3 text-center">
+            Selecione seu nome para iniciar
+          </p>
+
+          {loginError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 mb-3">
+              {loginError}
             </div>
+          )}
 
-            {loginError && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                {loginError}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={!userName.trim() || loginLoading}
-              className="w-full bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white font-bold py-3 rounded-lg transition duration-200"
-            >
-              {loginLoading ? 'Conectando...' : 'Iniciar Contagem'}
-            </button>
-          </form>
-
-          <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <p className="text-xs text-blue-700">
-              <strong>💡 Dica:</strong> Digite seu nome completo para iniciar. Seus dados são salvos automaticamente e você pode retomar a contagem a qualquer momento.
-            </p>
+          <div className="grid grid-cols-3 gap-2 max-h-72 overflow-y-auto pr-1">
+            {CONTADORES.map(nome => (
+              <button
+                key={nome}
+                onClick={() => {
+                  setUserName(nome);
+                  handleLogin({ preventDefault: () => {}, target: null }, nome);
+                }}
+                disabled={loginLoading}
+                className="px-3 py-3 bg-green-50 hover:bg-green-500 hover:text-white border border-green-200 hover:border-green-500 disabled:opacity-50 text-gray-800 text-sm font-medium rounded-lg transition duration-150 text-center"
+              >
+                {loginLoading && userName === nome ? '...' : nome}
+              </button>
+            ))}
           </div>
         </div>
       </div>

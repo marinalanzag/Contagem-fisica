@@ -245,6 +245,65 @@ export const obterItensContados = async (sessionId) => {
   }
 };
 
+// Buscar todos os itens do usuário (todas as sessões)
+export const obterTodosItensUsuario = async (userId) => {
+  try {
+    // 1. Buscar todas as sessões do usuário
+    const { data: sessoes, error: erroSessoes } = await supabase
+      .from('sessoes_contagem')
+      .select('id')
+      .eq('usuario_id', userId);
+
+    if (erroSessoes) throw erroSessoes;
+    if (!sessoes || sessoes.length === 0) return { sucesso: true, dados: [] };
+
+    const sessaoIds = sessoes.map(s => s.id);
+
+    // 2. Buscar todos os itens de todas as sessões
+    const { data, error } = await supabase
+      .from('itens_contados')
+      .select(`
+        id,
+        produto_id,
+        quantidade_total,
+        numero_registros,
+        ultima_atualizacao,
+        produtos:produto_id (
+          id,
+          codigo,
+          descricao,
+          categoria,
+          unidade_padrao
+        ),
+        usuarios:atualizado_por (
+          nome
+        )
+      `)
+      .in('sessao_id', sessaoIds)
+      .order('ultima_atualizacao', { ascending: false });
+
+    if (error) throw error;
+
+    const itens = data.map(item => ({
+      id: item.id,
+      produto_id: item.produto_id,
+      codigo: item.produtos.codigo,
+      descricao: item.produtos.descricao,
+      categoria: item.produtos.categoria,
+      unidade: item.produtos.unidade_padrao,
+      quantidade: item.quantidade_total,
+      numRegistros: item.numero_registros,
+      ultimaAtualizacao: item.ultima_atualizacao,
+      atualizadoPor: item.usuarios?.nome
+    }));
+
+    return { sucesso: true, dados: itens };
+  } catch (erro) {
+    console.error('Erro ao obter itens do usuário:', erro);
+    return { sucesso: false, dados: [] };
+  }
+};
+
 // 5. FUNÇÕES DE RELATÓRIO
 // =============================================================================
 
