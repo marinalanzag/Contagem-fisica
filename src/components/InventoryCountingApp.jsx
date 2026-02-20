@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Download, LogOut, Trash2, Camera, X, Link } from 'lucide-react';
+import { Plus, Download, LogOut, Trash2, Camera, X, Link, ArrowLeft } from 'lucide-react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import {
   iniciarSessao,
@@ -265,8 +265,8 @@ const InventoryCountingApp = () => {
         {
           fps: 15,
           qrbox: (viewfinderWidth, viewfinderHeight) => ({
-            width: Math.floor(viewfinderWidth * 0.85),
-            height: Math.floor(viewfinderHeight * 0.3),
+            width: Math.floor(viewfinderWidth * 0.95),
+            height: Math.floor(viewfinderHeight * 0.25),
           }),
         },
         (decodedText) => {
@@ -851,45 +851,48 @@ const InventoryCountingApp = () => {
         )}
       </div>
 
-      {/* Modal do Scanner de Código de Barras */}
+      {/* Scanner de Código de Barras - Tela Cheia */}
       {showScanner && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="flex justify-between items-center p-4 border-b">
-              <h3 className="text-lg font-bold text-gray-800">Escanear Código de Barras</h3>
+        <div className="fixed inset-0 bg-black z-50 flex flex-col">
+          {/* Video container - fills entire screen */}
+          <div className="relative flex-1 overflow-hidden">
+            <div id="barcode-reader" className="w-full h-full"></div>
+
+            {/* Green scan line overlay */}
+            <div className="scanner-scanline"></div>
+
+            {/* Back button */}
+            <button
+              onClick={closeScanner}
+              className="absolute top-4 left-4 z-20 p-2 bg-black bg-opacity-50 rounded-full text-white hover:bg-opacity-70 transition"
+            >
+              <ArrowLeft size={28} />
+            </button>
+          </div>
+
+          {/* Bottom overlay area */}
+          <div className="bg-black px-4 pb-6 pt-3">
+            {scannerMessage && (
+              <div className={`mb-3 p-3 rounded-lg text-sm font-medium ${
+                scannerMessage.includes('não vinculado')
+                  ? 'bg-yellow-900 bg-opacity-80 text-yellow-200 border border-yellow-600'
+                  : 'bg-red-900 bg-opacity-80 text-red-200 border border-red-600'
+              }`}>
+                {scannerMessage}
+              </div>
+            )}
+            {pendingBarcode && (
               <button
-                onClick={closeScanner}
-                className="p-1 hover:bg-gray-100 rounded-full transition"
+                onClick={openLinkModal}
+                className="mb-3 w-full px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg transition flex items-center justify-center gap-2"
               >
-                <X size={24} />
+                <Link size={18} />
+                Vincular "{pendingBarcode}" a um produto
               </button>
-            </div>
-            <div className="p-4">
-              <div id="barcode-reader" className="w-full rounded-lg overflow-hidden"></div>
-              {scannerMessage && (
-                <div className={`mt-3 p-3 rounded-lg text-sm font-medium ${
-                  scannerMessage.includes('não vinculado')
-                    ? 'bg-yellow-50 text-yellow-800 border border-yellow-200'
-                    : 'bg-red-50 text-red-800 border border-red-200'
-                }`}>
-                  {scannerMessage}
-                </div>
-              )}
-              {pendingBarcode && (
-                <button
-                  onClick={openLinkModal}
-                  className="mt-3 w-full px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded-lg transition flex items-center justify-center gap-2"
-                >
-                  <Link size={18} />
-                  Vincular "{pendingBarcode}" a um produto
-                </button>
-              )}
-              {!pendingBarcode && (
-                <p className="mt-3 text-xs text-gray-500 text-center">
-                  Aponte a câmera para o código de barras do produto
-                </p>
-              )}
-            </div>
+            )}
+            <p className="text-sm text-gray-400 text-center italic">
+              Posicione a linha verde sobre o código de barras
+            </p>
           </div>
         </div>
       )}
